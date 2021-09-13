@@ -438,9 +438,9 @@ class SmallMLP(nn.Module):
         else:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),
                 layer(n_hid, n_out)
             )
         self.normalized = False
@@ -477,13 +477,13 @@ class LargeMLP(nn.Module):
         else:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                Swish(n_hid),
+                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
+                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
+                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
+                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_out)
             )
         self.normalized = False

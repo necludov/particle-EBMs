@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--ld_step', type=float, default=1e-4)
     parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-4))
-    parser.add_argument('--ld_n_iter', type=int, default=50)
+    parser.add_argument('--ld_n_iter', type=int, default=100)
     args = parser.parse_args()
     
     target_name = args.data

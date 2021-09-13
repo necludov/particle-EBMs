@@ -34,7 +34,7 @@ if __name__ == '__main__':
         type=str, default='8gaussians'
     )
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--n_iters', type=int, default=5000)
+    parser.add_argument('--n_iters', type=int, default=10000)
     parser.add_argument('--save_period', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=1000)
     parser.add_argument('--n_particles', type=int, default=1000)
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--ld_step', type=float, default=1e-4)
     parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-4))
-    parser.add_argument('--ld_n_iter', type=int, default=100)
+    parser.add_argument('--ld_n_iter', type=int, default=1000)
     parser.add_argument('--ld_clip', type=float, default=None)
     args = parser.parse_args()
     
@@ -78,8 +78,8 @@ if __name__ == '__main__':
         for p in ebm.parameters(): p.grad = None
         loss = ebm(train_batch).mean()-ebm(particles).mean()
         loss.backward()
-        logger.add_scalar(t, 'loss', loss.detach().cpu().numpy())
         optimizer.step()
+        logger.add_scalar(t, 'loss', loss.detach().cpu().numpy())
         logl = log_likelihood_2d(ebm, train_batch)
         logger.add_scalar(t, 'logl', logl.detach().cpu().numpy())
         

@@ -34,7 +34,7 @@ if __name__ == '__main__':
         type=str, default='8gaussians'
     )
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--n_iters', type=int, default=1000)
+    parser.add_argument('--n_iters', type=int, default=10000)
     parser.add_argument('--save_period', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=1000)
     parser.add_argument('--n_particles', type=int, default=1000)
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     target_name = args.data
-    exp_name = 'beta_' + target_name
+    exp_name = 'gamma_' + target_name
     path = './logs/' + exp_name + '.pt'
     logger = Logger(exp_name, fmt={'lr': '.2e', 'loss': '.4e', 'mmd': '.4e'})
         
@@ -59,17 +59,20 @@ if __name__ == '__main__':
     logger.print('Starting experiment with seed={}'.format(args.seed))
     train_batch = sample_data(target_name, batch_size, rng)
 
-    net = networks.SmallMLP(2)
+#     net = networks.LargeMLP(2)
     mu, sigma = train_batch.mean(0), train_batch.std(0)
     base_dist = distributions.Normal(mu, sigma)
-    ebm = models.EBM(net, base_dist).to(device)
+#     ebm = models.EBM(net, base_dist=None).to(device)
     
-    particles = ebm.sample(base_dist.sample((n_particles,)), dt=1e-4, sigma=np.sqrt(1e-4), n_steps=1000)
+    particles = base_dist.sample((n_particles,))
     
-    optimizer = optim.Adam(ebm.parameters(), lr=args.lr, betas=(.0, .999))
+#     optimizer = optim.Adam(ebm.parameters(), lr=args.lr, betas=(.0, .999))
     for t in range(args.n_iters):
+        net = networks.SmallMLP(2)
+        ebm = models.EBM(net, base_dist).to(device)
+        
         train_batch = sample_data(target_name, batch_size, rng)
-        logger.add_scalar(t, 'lr', optimizer.param_groups[0]['lr'])
+#         logger.add_scalar(t, 'lr', optimizer.param_groups[0]['lr'])
         
         #get grad (no model update)
         for p in ebm.parameters(): p.grad = None
@@ -80,13 +83,14 @@ if __name__ == '__main__':
         logger.add_scalar(t, 'logl', logl.detach().cpu().numpy())
         
         #update particles
-        diff_grad = ebm.get_grad()
+        diff_grad = ebm.get_grad().clone()
+        for p in ebm.parameters(): p.grad = None
         def dEdt(x):
             grad_E = torch.autograd.grad(ebm(x).sum(), ebm.parameters(), retain_graph=True, create_graph=True)
             return (torch.nn.utils.parameters_to_vector(grad_E)*diff_grad).sum()
         
         grad_particles = torch.autograd.Variable(particles, requires_grad=True)
-        particles += torch.autograd.grad(dEdt(grad_particles), [grad_particles], retain_graph=True)[0].detach()
+        particles += 1e-1*torch.autograd.grad(dEdt(grad_particles), [grad_particles], retain_graph=True)[0].detach()
         logger.add_scalar(t, 'mmd', mmd(particles, train_batch, 0.1*np.ones(2)).detach().cpu().numpy())
         logger.iter_info()
         if (t % args.save_period) == 0:
