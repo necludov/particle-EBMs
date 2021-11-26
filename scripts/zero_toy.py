@@ -38,16 +38,15 @@ if __name__ == '__main__':
     parser.add_argument('--save_period', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=1000)
     parser.add_argument('--n_particles', type=int, default=1000)
-    parser.add_argument('--resample_rate', type=float, default=0.05)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--ld_step', type=float, default=1e-4)
-    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-4))
-    parser.add_argument('--ld_n_iter', type=int, default=1000)
+    parser.add_argument('--ld_step', type=float, default=1e-2)
+    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-2))
+    parser.add_argument('--ld_n_iter', type=int, default=20)
     parser.add_argument('--ld_clip', type=float, default=None)
     args = parser.parse_args()
     
     target_name = args.data
-    exp_name = 'zero_' + target_name
+    exp_name = 'zero_' + target_name + ('_seed_%d' % args.seed)
     path = './logs/' + exp_name + '.pt'
     logger = Logger(exp_name, fmt={'lr': '.2e', 'loss': '.4e', 'mmd': '.4e'})
         
@@ -59,6 +58,7 @@ if __name__ == '__main__':
     
     mmd = MMDStatistic(batch_size, n_particles)
     logger.print('Starting experiment with seed={}'.format(args.seed))
+    logger.print('device:', device)
     train_batch = sample_data(target_name, batch_size, rng)
 
     net = networks.SmallMLP(2)
@@ -66,8 +66,7 @@ if __name__ == '__main__':
     base_dist = distributions.Normal(mu, sigma)
     ebm = models.EBM(net, base_dist).to(device)
     
-    particles = ebm.sample(base_dist.sample((n_particles,)), dt=1e-4, 
-                           sigma=np.sqrt(1e-4), n_steps=1000)
+    particles = ebm.sample(base_dist.sample((n_particles,)), dt=args.ld_step, sigma=args.ld_sigma, n_steps=1000)
     
     optimizer = optim.Adam(ebm.parameters(), lr=args.lr, betas=(.0, .999))
     for t in range(args.n_iters):
@@ -84,11 +83,9 @@ if __name__ == '__main__':
         logger.add_scalar(t, 'logl', logl.detach().cpu().numpy())
         
         #update particles
-        resample_mask = torch.rand(n_particles) < args.resample_rate
-        particles[resample_mask] = base_dist.sample((resample_mask.sum(),))
-        particles = ebm.sample(particles, dt=args.ld_step, sigma=args.ld_sigma, 
-                               n_steps=args.ld_n_iter, clip_value=args.ld_clip)
-        logger.add_scalar(t, 'mmd', mmd(particles, train_batch, 0.1*np.ones(2)).detach().cpu().numpy())
+#         particles = ebm.sample(particles, dt=2.0, sigma=np.sqrt(2), n_steps=1)
+        particles = ebm.sample(particles, dt=args.ld_step, sigma=args.ld_sigma, n_steps=args.ld_n_iter, clip_value=args.ld_clip)
+        logger.add_scalar(t, 'mmd', mmd(particles, train_batch, np.ones(2)).detach().cpu().numpy())
         logger.iter_info()
         if (t % args.save_period) == 0:
             logger.save()

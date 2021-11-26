@@ -25,6 +25,33 @@ def sample_data(name, batch_size, rng):
     x = torch.from_numpy(x).type(torch.float32).to(device)
     return x
 
+def get_vector_field(ebm, train_batch, particles):
+    ebm_data = deepcopy(ebm)
+    ebm_data_sqr = deepcopy(ebm)
+    
+    energies_data = ebm(train_batch).detach().view([-1,1])
+    v = torch.zeros_like(particles)
+    for i in range(v.shape[0]):
+        for p in ebm.parameters(): p.grad = None
+        for p in ebm_data.parameters(): p.grad = None
+        for p in ebm_data_sqr.parameters(): p.grad = None
+        grad_batch = torch.autograd.Variable(train_batch, requires_grad=True)
+        grad_batch_sqr = torch.autograd.Variable(train_batch, requires_grad=True)
+
+        grad_theta_data = torch.autograd.grad(ebm_data(grad_batch).sum(), ebm_data.parameters(), 
+                                              retain_graph=True, create_graph=True)
+        grad_theta_data_sqr = torch.autograd.grad((ebm_data_sqr(grad_batch_sqr)**2).sum(), ebm_data_sqr.parameters(), 
+                                                  retain_graph=True, create_graph=True)
+        grad_theta_particle = torch.autograd.grad(ebm(particles[i].view([1,-1])).sum(), ebm.parameters())
+        scal = (nn.utils.parameters_to_vector(grad_theta_data)*nn.utils.parameters_to_vector(grad_theta_particle)).sum()
+        v_1 = torch.autograd.grad(scal, grad_batch, retain_graph=True)[0].detach()
+        v_1 = (v_1*(-energies_data-1)).mean(0)
+        scal_sqr = (nn.utils.parameters_to_vector(grad_theta_data_sqr)*nn.utils.parameters_to_vector(grad_theta_particle)).sum()
+        v_2 = torch.autograd.grad(scal_sqr, grad_batch_sqr, retain_graph=True)[0].detach()
+        v_2 = 0.5*v_2.mean(0)
+        v[i] = v_1 + v_2
+    return v
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -34,14 +61,14 @@ if __name__ == '__main__':
         type=str, default='8gaussians'
     )
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--n_iters', type=int, default=10000)
-    parser.add_argument('--save_period', type=int, default=100)
+    parser.add_argument('--n_iters', type=int, default=100)
+    parser.add_argument('--save_period', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=1000)
     parser.add_argument('--n_particles', type=int, default=1000)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--ld_step', type=float, default=1e-4)
-    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-4))
-    parser.add_argument('--ld_n_iter', type=int, default=100)
+    parser.add_argument('--ld_step', type=float, default=1e-2)
+    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-2))
+    parser.add_argument('--ld_n_iter', type=int, default=10)
     args = parser.parse_args()
     
     target_name = args.data
@@ -57,6 +84,7 @@ if __name__ == '__main__':
     
     mmd = MMDStatistic(batch_size, n_particles)
     logger.print('Starting experiment with seed={}'.format(args.seed))
+    logger.print('device:', device)
     train_batch = sample_data(target_name, batch_size, rng)
 
     net = networks.SmallMLP(2)
@@ -68,7 +96,7 @@ if __name__ == '__main__':
     particles = ebm.sample(base_dist.sample((n_particles,)), dt=1e-4, sigma=np.sqrt(1e-4), n_steps=1000)
     
     optimizer = optim.Adam(ebm.parameters(), lr=args.lr, betas=(.0, .999))
-    for t in range(12):
+    for t in range(args.n_iters):
         train_batch = sample_data(target_name, batch_size, rng)
         logger.add_scalar(t, 'lr', optimizer.param_groups[0]['lr'])
         
@@ -82,29 +110,10 @@ if __name__ == '__main__':
         logger.add_scalar(t, 'logl', logl.detach().cpu().numpy())
         
         #update particles
-        v = torch.zeros_like(particles)
         for p in ebm.parameters(): p.grad = None
-            
-        ebm_data = deepcopy(ebm)
-        grad_train_batch = torch.autograd.Variable(train_batch, requires_grad=True)
-        grad_theta_data = torch.autograd.grad(ebm_data(grad_train_batch).sum(), ebm_data.parameters(), 
-                                              retain_graph=True, create_graph=True)
-            
-        e_particles = ebm(particles)
-        z = torch.autograd.Variable(torch.ones_like(e_particles), requires_grad=True)
-        grad_theta_particles = torch.autograd.grad((e_particles*z).sum(), ebm.parameters(), 
-                                                   retain_graph=True, create_graph=True)
+        v = get_vector_field(ebm, train_batch, particles)
         
-        scalar_prod = (nn.utils.parameters_to_vector(grad_theta_data)*nn.utils.parameters_to_vector(grad_theta_particles)).sum()
-        
-        grad_particles = torch.autograd.Variable(particles, requires_grad=True)
-        v = torch.autograd.grad(ebm(grad_particles).sum(), grad_particles)[0]
-        v *= torch.autograd.grad(scalar_prod, z, retain_graph=True)[0].unsqueeze(1)
-        avg_attr = torch.autograd.grad(scalar_prod, grad_train_batch, retain_graph=True, create_graph=True)[0]
-        for i in range(v.size()[1]):
-            v[:,i] -= torch.autograd.grad(avg_attr.flatten()[i], z, retain_graph=True)[0]
-        
-        particles += 1e-5*v
+        particles += 1e-3*v
         particles = ebm.sample(particles, dt=args.ld_step, sigma=args.ld_sigma, n_steps=args.ld_n_iter)
         logger.add_scalar(t, 'mmd', mmd(particles, train_batch, 0.1*np.ones(2)).detach().cpu().numpy())
         logger.iter_info()

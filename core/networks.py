@@ -5,6 +5,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.nn.utils.spectral_norm as spectral_norm
 
 def conv_transpose_3x3(in_planes, out_planes, stride=1):
     return nn.ConvTranspose2d(in_planes, out_planes,
@@ -197,24 +198,25 @@ class MNISTConvNetCritic(nn.Module):
 
 
 class MNISTSmallConvNet(nn.Module):
-    def __init__(self, nc=64, quadratic=False):
+    def __init__(self, nc=64, n_out=1, quadratic=False, relu=True, sn=True):
         super().__init__()
         self.quadratic = quadratic
         n_c = 1
         n_f = nc
         l = .2
         self.net = nn.Sequential(
-            nn.Conv2d(n_c, n_f, 3, 1, 1),
-            Swish(n_f),
-            nn.Conv2d(n_f, n_f * 2, 4, 2, 1),
-            Swish(2 * n_f),
-            nn.Conv2d(n_f * 2, n_f * 4, 4, 2, 1),
-            Swish(4 * n_f),
-            nn.Conv2d(n_f * 4, n_f * 8, 4, 2, 1),
-            Swish(8 * n_f),
-            nn.Conv2d(n_f * 8, n_f * 8, 3, 1, 0)
+            spectral_norm(nn.Conv2d(n_c, n_f, 3, 1, 1)) if sn else nn.Conv2d(n_c, n_f, 3, 1, 1),
+            nn.LeakyReLU(.2) if relu else Swish(n_f),
+            spectral_norm(nn.Conv2d(n_f, n_f * 1, 4, 2, 1)) if sn else nn.Conv2d(n_f, n_f * 1, 4, 2, 1),
+            nn.LeakyReLU(.2) if relu else Swish(1*n_f),
+            spectral_norm(nn.Conv2d(n_f * 1, n_f * 1, 4, 2, 1)) if sn else nn.Conv2d(n_f * 1, n_f * 1, 4, 2, 1),
+            nn.LeakyReLU(.2) if relu else Swish(1*n_f),
+            spectral_norm(nn.Conv2d(n_f * 1, n_f * 1, 4, 2, 1)) if sn else nn.Conv2d(n_f * 1, n_f * 1, 4, 2, 1),
+            nn.LeakyReLU(.2) if relu else Swish(1*n_f),
+            spectral_norm(nn.Conv2d(n_f * 1, n_f * 1, 3, 1, 0)) if sn else nn.Conv2d(n_f * 1, n_f * 1, 3, 1, 0),
+            nn.LeakyReLU(.2) if relu else Swish(1*n_f),
         )
-        self.out = nn.Linear(n_f * 8, 1)
+        self.out = nn.Linear(n_f * 1, n_out)
 
     def forward(self, input):
         input = input.view(input.size(0), 1, 28, 28)
@@ -422,25 +424,23 @@ class QuadraticMLP(nn.Module):
 
 
 class SmallMLP(nn.Module):
-    def __init__(self, n_dims, n_out=1, n_hid=300, layer=nn.Linear, dropout=False):
+    def __init__(self, n_dims, n_out=1, n_hid=300, layer=nn.Linear, relu=False):
         super(SmallMLP, self).__init__()
         self._built = False
-        if dropout:
+        if relu:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),
                 layer(n_hid, n_out)
             )
         else:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                Swish(n_hid),#nn.ReLU(),
+                Swish(n_hid),
                 layer(n_hid, n_hid),
-                Swish(n_hid),#nn.ReLU(),
+                Swish(n_hid),
                 layer(n_hid, n_out)
             )
         self.normalized = False
@@ -455,35 +455,31 @@ class SmallMLP(nn.Module):
             return out
 
 class LargeMLP(nn.Module):
-    def __init__(self, n_dims, n_out=1, n_hid=300, layer=nn.Linear, dropout=False):
+    def __init__(self, n_dims, n_out=1, n_hid=300, layer=nn.Linear, relu=False):
         super(LargeMLP, self).__init__()
         self._built = False
-        if dropout:
+        if relu:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),#nn.ReLU(),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),#nn.ReLU(),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),#nn.ReLU(),
                 layer(n_hid, n_hid),
-                Swish(n_hid),
-                nn.Dropout(.5),
+                nn.LeakyReLU(.2),#nn.ReLU(),
                 layer(n_hid, n_out)
             )
         else:
             self.net = nn.Sequential(
                 layer(n_dims, n_hid),
-                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_hid),
-                nn.ReLU(),#nn.ReLU(),Swish(n_hid),
+                Swish(n_hid),#nn.ReLU(),Swish(n_hid),
                 layer(n_hid, n_out)
             )
         self.normalized = False
@@ -568,21 +564,32 @@ class BigMLP(nn.Module):
 
 
 class SmallConv(nn.Module):
-    def __init__(self, n_dims, n_channels):
+    def __init__(self, n_dims, n_c=64):
         
         super(SmallConv, self).__init__()
         self._built = False
         self.net = nn.Sequential(
-            nn.Conv2d(1, n_channels, kernel_size=3, padding=1),
+            nn.Conv2d(1, n_c, kernel_size=7, stride=1, padding=0),
             nn.LeakyReLU(.2),
-            nn.Conv2d(n_channels, n_channels, kernel_size=3, padding=3),
+            spectral_norm(nn.Conv2d(n_c, n_c, kernel_size=5, stride=1, padding=0)),
             nn.LeakyReLU(.2),
-            nn.Linear(n_dims * n_channels, 1)
+            spectral_norm(nn.Conv2d(n_c, n_c, kernel_size=5, stride=1, padding=0)),
+            nn.LeakyReLU(.2),
+            spectral_norm(nn.Conv2d(n_c, n_c, kernel_size=5, stride=1, padding=0)),
+            nn.LeakyReLU(.2),
+            spectral_norm(nn.Conv2d(n_c, n_c, kernel_size=5, stride=1, padding=0)),
+            nn.LeakyReLU(.2),
+            spectral_norm(nn.Conv2d(n_c, n_c, kernel_size=5, stride=1, padding=0)),
+            nn.LeakyReLU(.2)
         )
+        self.out = spectral_norm(nn.Linear(2*2*n_c, 1))
 
     def forward(self, x):
         # x = x.view(x.size(0), -1)
-        out = self.net(x)
+        x = self.net(x)
+#         print(x.shape)
+        x = x.view(x.size(0), -1)
+        out = self.out(x)
         return out.squeeze()
 
 

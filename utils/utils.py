@@ -1,16 +1,39 @@
 import torch
 import numpy as np
 
+def pairwise_distances(x, y=None):
+    '''
+    Input: x is a Nxd matrix
+           y is an optional Mxd matirx
+    Output: dist is a NxM matrix where dist[i,j] is the square norm between x[i,:] and y[j,:]
+            if y is not given then use 'y=x'.
+    i.e. dist[i,j] = ||x[i,:]-y[j,:]||^2
+    '''
+    x_norm = (x**2).sum(1).view(-1, 1)
+    if y is not None:
+        y_t = torch.transpose(y, 0, 1)
+        y_norm = (y**2).sum(1).view(1, -1)
+    else:
+        y_t = torch.transpose(x, 0, 1)
+        y_norm = x_norm.view(1, -1)
+    
+    dist = x_norm + y_norm - 2.0 * torch.mm(x, y_t)
+    # Ensure diagonal is zero if x=y
+    # if y is None:
+    #     dist = dist - torch.diag(dist.diag)
+    return torch.clamp(dist, 0.0, np.inf)
+
 def log_likelihood_2d(ebm, train_samples):
-    grid_size = 100
+    grid_size = 200
     x_min, x_max = -5., 5.
     y_min, y_max = -5., 5.
+    dx, dy = (y_max-y_min)/grid_size, (x_max-x_min)/grid_size
     x = torch.linspace(x_min,x_max,grid_size).to(ebm.get_device())
     y = torch.linspace(x_min,x_max,grid_size).to(ebm.get_device())
     x_grid,y_grid = torch.meshgrid(x,y)
-    pdf = torch.exp(-ebm(torch.stack([x_grid, y_grid], axis=2).reshape([-1, 2]))).detach()
-    Z = pdf.sum()*(y_max-y_min)/grid_size*(x_max-x_min)/grid_size
-    logl = -ebm(train_samples).mean().detach() - torch.log(Z)
+    energy = ebm(torch.stack([x_grid, y_grid], axis=2).reshape([-1, 2])).detach()
+    logZ = torch.logsumexp(-energy,0) + np.log(dx) + np.log(dy)
+    logl = -ebm(train_samples).mean().detach() - logZ
     return logl
 
 ######################################################

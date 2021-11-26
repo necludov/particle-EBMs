@@ -36,16 +36,16 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--n_iters', type=int, default=10000)
     parser.add_argument('--save_period', type=int, default=100)
-    parser.add_argument('--batch_size', type=int, default=1000)
-    parser.add_argument('--n_particles', type=int, default=1000)
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--n_particles', type=int, default=128)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--ld_step', type=float, default=1e-2)
-    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-2))
+    parser.add_argument('--ld_step', type=float, default=1e-1)
+    parser.add_argument('--ld_sigma', type=float, default=np.sqrt(1e-1))
     parser.add_argument('--ld_n_iter', type=int, default=10)
     args = parser.parse_args()
     
     target_name = args.data
-    exp_name = 'beta_' + target_name + ('_seed_%d' % args.seed)
+    exp_name = 'betaSB_' + target_name
     path = './logs/' + exp_name + '.pt'
     logger = Logger(exp_name, fmt={'lr': '.2e', 'loss': '.4e', 'mmd': '.4e'})
         
@@ -89,11 +89,18 @@ if __name__ == '__main__':
             grad_E = torch.autograd.grad(ebm(x).sum(), ebm.parameters(), retain_graph=True, create_graph=True)
             return (torch.nn.utils.parameters_to_vector(grad_E)*dtheta).sum()
         
+        resample_mask = torch.zeros(args.n_particles).bool()
+        resample_mask[:int(args.n_particles*0.1)] = 1.0
+        resample_mask = resample_mask[torch.randperm(len(resample_mask))]
+#         particles[resample_mask] = torch.randn_like(particles[resample_mask])
+        particles[resample_mask] = previous_ebm.sample(torch.randn_like(particles[resample_mask]), 
+                                                       dt=1e0, sigma=np.sqrt(1e0), n_steps=10)
+        
         grad_particles = torch.autograd.Variable(particles, requires_grad=True)
         particles += -torch.autograd.grad(dEdt(grad_particles), [grad_particles], retain_graph=True)[0].detach()
         particles = ebm.sample(particles, dt=args.ld_step, sigma=args.ld_sigma, n_steps=args.ld_n_iter)
         previous_ebm = deepcopy(ebm)
-        logger.add_scalar(t, 'mmd', mmd(particles, train_batch, np.ones(2)).detach().cpu().numpy())
+        logger.add_scalar(t, 'mmd', mmd(particles, train_batch, 1e-1*np.ones(2)).detach().cpu().numpy())
         logger.iter_info()
         if (t % args.save_period) == 0:
             logger.save()

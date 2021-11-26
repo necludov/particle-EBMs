@@ -142,10 +142,10 @@ class Mixture:
         x = (c[:, None, :] * xs).sum(-1)
         return x
 
-    def logprob(self, x):
+    def log_prob(self, x):
         lpx = [comp.log_prob(x) for comp in self.comps]
         lpx = [lp.view(lp.size(0), -1).sum(1).unsqueeze(-1) for lp in lpx]
-        lpx = torch.cat(lpx, -1).clamp(-20, 20)
+        lpx = torch.cat(lpx, -1)#.clamp(-20, 20)
         logpxc = lpx + torch.log(self.pi.probs[None])
         logpx = logpxc.logsumexp(1)
         return logpx
@@ -160,6 +160,22 @@ def multi_dim_2d(data_list, rng=None, batch_size=200):
         samples.append(inf_train_gen(data, rng, batch_size))
     final_samples = np.concatenate(samples, axis=1)
     return final_samples
+
+def gaussian8():
+    scale = 4./1.414
+    centers = [(1, 0), (-1, 0), (0, 1), (0, -1), (1. / np.sqrt(2), 1. / np.sqrt(2)),
+               (1. / np.sqrt(2), -1. / np.sqrt(2)), (-1. / np.sqrt(2),
+                                                     1. / np.sqrt(2)), (-1. / np.sqrt(2), -1. / np.sqrt(2))]
+    centers = [torch.tensor([scale * x, scale * y]) for x, y in centers]
+    
+    comps = []
+    for i in range(len(centers)):
+        comp = tdist.Normal(centers[i], torch.ones((2,)) * 0.5/1.414)
+        comps.append(comp)
+        
+    pi = torch.ones((len(centers),)) / len(centers)
+    mog = Mixture(comps, pi)
+    return mog
 
 
 def gaussian_grid_2d(size=2, std=.25):
