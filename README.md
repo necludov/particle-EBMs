@@ -1,6 +1,6 @@
 # particle-EBMs
 
-The repository for [Particle Dynamics for Learning EBMs](link)
+The repository for [Particle Dynamics for Learning EBMs](https://arxiv.org/pdf/2111.13772.pdf)
 
 ![visualization][density_pic]
 
